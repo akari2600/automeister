@@ -501,6 +501,30 @@ def shell_cmd(
         typer.echo(output)
 
 
+@exec_app.command("log")
+def log_cmd(
+    message: Annotated[str, typer.Argument(help="Message to log")],
+    level: Annotated[
+        str,
+        typer.Option("--level", "-l", help="Log level (debug, info, warn, error)"),
+    ] = "info",
+) -> None:
+    """Print a log message."""
+    prefix = {"debug": "[DEBUG]", "info": "[INFO]", "warn": "[WARN]", "error": "[ERROR]"}.get(
+        level, "[INFO]"
+    )
+    typer.echo(f"{prefix} {message}")
+
+
+@exec_app.command("fail")
+def fail_cmd(
+    message: Annotated[str, typer.Argument(help="Error message")] = "Execution failed",
+) -> None:
+    """Exit with an error."""
+    typer.echo(f"Error: {message}", err=True)
+    raise typer.Exit(1)
+
+
 # =============================================================================
 # Macro commands
 # =============================================================================
