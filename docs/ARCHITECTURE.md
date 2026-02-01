@@ -157,9 +157,7 @@ User -> CLI -> Macro Engine -> Load YAML
 3. **System Errors**: Tool failures mapped to specific exit codes
 4. **Timeout Errors**: Configurable timeouts with clear messaging
 
-## Security Considerations
+## Notes
 
-1. **Shell Injection**: All shell commands use parameterized execution
-2. **File Access**: Macros restricted to designated directories
-3. **Sensitive Data**: Environment variables masked in logs
-4. **Screenshots**: Warning for screenshots containing sensitive data
+- Macros have full access to shell commands and the display - treat them like scripts
+- For sensitive operations, consider environment variables over hardcoded values

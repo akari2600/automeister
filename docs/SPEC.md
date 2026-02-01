@@ -567,15 +567,7 @@ timeouts:
 }
 ```
 
-## 7. Security Considerations
-
-1. **Parameter Injection**: All parameters sanitized before shell execution
-2. **File Access**: Macros restricted to designated directories
-3. **Environment Variables**: Sensitive env vars masked in logs
-4. **Screen Capture**: Warning about sensitive information in screenshots
-5. **Shell Commands**: Commands logged but outputs containing patterns like passwords masked
-
-## 8. Future Considerations
+## 7. Future Considerations
 
 ### 8.1 Wayland Support
 
