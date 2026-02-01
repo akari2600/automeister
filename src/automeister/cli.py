@@ -5,7 +5,7 @@ from typing import Annotated
 import typer
 
 from automeister import __version__
-from automeister.actions import keyboard, mouse, screen, util
+from automeister.actions import image, keyboard, mouse, screen, util
 
 # Main application
 app = typer.Typer(
@@ -68,6 +68,208 @@ def screen_capture(
 
     result = screen.capture(region=region_tuple, output=output, tool=tool)
     typer.echo(f"Screenshot saved to: {result}")
+
+
+# =============================================================================
+# Image recognition commands
+# =============================================================================
+
+
+@exec_app.command("screen.find")
+def screen_find(
+    template: Annotated[str, typer.Argument(help="Path to template image")],
+    threshold: Annotated[
+        float,
+        typer.Option("--threshold", "-t", help="Confidence threshold (0.0-1.0)"),
+    ] = 0.8,
+    region: Annotated[
+        str | None,
+        typer.Option("--region", "-r", help="Search region (x,y,w,h)"),
+    ] = None,
+    grayscale: Annotated[
+        bool,
+        typer.Option("--grayscale", "-g", help="Use grayscale matching"),
+    ] = False,
+    method: Annotated[
+        str,
+        typer.Option("--method", "-m", help="Matching method"),
+    ] = "ccoeff_normed",
+    all_matches: Annotated[
+        bool,
+        typer.Option("--all", "-a", help="Return all matches"),
+    ] = False,
+) -> None:
+    """Find a template image on the screen."""
+    region_tuple = None
+    if region:
+        region_tuple = screen.parse_region(region)
+
+    match_method = image.parse_method(method)
+    match_mode = "all" if all_matches else "best"
+
+    matches = image.find(
+        template,
+        threshold=threshold,
+        region=region_tuple,
+        grayscale=grayscale,
+        method=match_method,
+        match_mode=match_mode,  # type: ignore
+    )
+
+    if not matches:
+        typer.echo("No matches found")
+        raise typer.Exit(1)
+
+    for match in matches:
+        typer.echo(
+            f"Found at ({match.x}, {match.y}) "
+            f"size {match.width}x{match.height} "
+            f"confidence {match.confidence:.3f}"
+        )
+
+
+@exec_app.command("screen.wait-for")
+def screen_wait_for(
+    template: Annotated[str, typer.Argument(help="Path to template image")],
+    timeout: Annotated[
+        float,
+        typer.Option("--timeout", "-T", help="Timeout in seconds"),
+    ] = 30.0,
+    interval: Annotated[
+        float,
+        typer.Option("--interval", "-i", help="Check interval in seconds"),
+    ] = 0.5,
+    threshold: Annotated[
+        float,
+        typer.Option("--threshold", "-t", help="Confidence threshold (0.0-1.0)"),
+    ] = 0.8,
+    region: Annotated[
+        str | None,
+        typer.Option("--region", "-r", help="Search region (x,y,w,h)"),
+    ] = None,
+    grayscale: Annotated[
+        bool,
+        typer.Option("--grayscale", "-g", help="Use grayscale matching"),
+    ] = False,
+    method: Annotated[
+        str,
+        typer.Option("--method", "-m", help="Matching method"),
+    ] = "ccoeff_normed",
+) -> None:
+    """Wait for a template image to appear on screen."""
+    region_tuple = None
+    if region:
+        region_tuple = screen.parse_region(region)
+
+    match_method = image.parse_method(method)
+
+    try:
+        match = image.wait_for(
+            template,
+            timeout=timeout,
+            interval=interval,
+            threshold=threshold,
+            region=region_tuple,
+            grayscale=grayscale,
+            method=match_method,
+        )
+        typer.echo(
+            f"Found at ({match.x}, {match.y}) "
+            f"size {match.width}x{match.height} "
+            f"confidence {match.confidence:.3f}"
+        )
+    except image.ImageNotFoundError as e:
+        typer.echo(str(e))
+        raise typer.Exit(1) from None
+
+
+@exec_app.command("screen.exists")
+def screen_exists(
+    template: Annotated[str, typer.Argument(help="Path to template image")],
+    threshold: Annotated[
+        float,
+        typer.Option("--threshold", "-t", help="Confidence threshold (0.0-1.0)"),
+    ] = 0.8,
+    region: Annotated[
+        str | None,
+        typer.Option("--region", "-r", help="Search region (x,y,w,h)"),
+    ] = None,
+    grayscale: Annotated[
+        bool,
+        typer.Option("--grayscale", "-g", help="Use grayscale matching"),
+    ] = False,
+) -> None:
+    """Check if a template image exists on screen."""
+    region_tuple = None
+    if region:
+        region_tuple = screen.parse_region(region)
+
+    found = image.exists(
+        template,
+        threshold=threshold,
+        region=region_tuple,
+        grayscale=grayscale,
+    )
+
+    if found:
+        typer.echo("true")
+    else:
+        typer.echo("false")
+        raise typer.Exit(1)
+
+
+@exec_app.command("mouse.click-image")
+def mouse_click_image(
+    template: Annotated[str, typer.Argument(help="Path to template image")],
+    button: Annotated[
+        str,
+        typer.Option("--button", "-b", help="Button to click"),
+    ] = "left",
+    offset_x: Annotated[
+        int,
+        typer.Option("--offset-x", help="X offset from center"),
+    ] = 0,
+    offset_y: Annotated[
+        int,
+        typer.Option("--offset-y", help="Y offset from center"),
+    ] = 0,
+    timeout: Annotated[
+        float,
+        typer.Option("--timeout", "-T", help="Wait timeout (0 for no wait)"),
+    ] = 0.0,
+    threshold: Annotated[
+        float,
+        typer.Option("--threshold", "-t", help="Confidence threshold (0.0-1.0)"),
+    ] = 0.8,
+    region: Annotated[
+        str | None,
+        typer.Option("--region", "-r", help="Search region (x,y,w,h)"),
+    ] = None,
+    grayscale: Annotated[
+        bool,
+        typer.Option("--grayscale", "-g", help="Use grayscale matching"),
+    ] = False,
+) -> None:
+    """Find a template image and click on it."""
+    region_tuple = None
+    if region:
+        region_tuple = screen.parse_region(region)
+
+    try:
+        match = image.click_image(
+            template,
+            button=button,  # type: ignore
+            offset_x=offset_x,
+            offset_y=offset_y,
+            timeout=timeout,
+            threshold=threshold,
+            region=region_tuple,
+            grayscale=grayscale,
+        )
+        typer.echo(f"Clicked at ({match.center[0]}, {match.center[1]})")
+    except image.ImageNotFoundError as e:
+        typer.echo(str(e))
+        raise typer.Exit(1) from None
 
 
 # =============================================================================
