@@ -1,11 +1,24 @@
 """CLI application for Automeister."""
 
+import json
+import os
+import subprocess
+from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from automeister import __version__
 from automeister.actions import image, keyboard, mouse, screen, util
+from automeister.macro import (
+    MacroExecutor,
+    find_macro,
+    get_macros_dir,
+    load_macro,
+    load_macros,
+)
+from automeister.macro.executor import MacroExecutionError
+from automeister.macro.parser import MacroParseError
 
 # Main application
 app = typer.Typer(
@@ -21,6 +34,14 @@ exec_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(exec_app, name="exec")
+
+# Macro subcommand group
+macro_app = typer.Typer(
+    name="macro",
+    help="Manage macros.",
+    no_args_is_help=True,
+)
+app.add_typer(macro_app, name="macro")
 
 
 def version_callback(value: bool) -> None:
@@ -478,6 +499,222 @@ def shell_cmd(
     output = util.shell(command, timeout=timeout)
     if output:
         typer.echo(output)
+
+
+# =============================================================================
+# Macro commands
+# =============================================================================
+
+
+@app.command("run")
+def run_macro(
+    macro_name: Annotated[str, typer.Argument(help="Name or path to macro")],
+    params: Annotated[
+        list[str] | None,
+        typer.Option("--param", "-p", help="Parameter in key=value format"),
+    ] = None,
+    params_file: Annotated[
+        str | None,
+        typer.Option("--params-file", "-f", help="JSON file with parameters"),
+    ] = None,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Show execution details"),
+    ] = False,
+) -> None:
+    """Run a macro by name or file path."""
+    # Parse parameters
+    param_dict: dict[str, str] = {}
+
+    if params_file:
+        with open(params_file) as f:
+            param_dict.update(json.load(f))
+
+    if params:
+        for param in params:
+            if "=" not in param:
+                typer.echo(f"Invalid parameter format: {param} (expected key=value)")
+                raise typer.Exit(1)
+            key, value = param.split("=", 1)
+            param_dict[key] = value
+
+    # Load macro
+    try:
+        # Check if it's a file path
+        if macro_name.endswith((".yaml", ".yml")) or "/" in macro_name:
+            macro = load_macro(macro_name)
+        else:
+            macro = find_macro(macro_name)
+            if macro is None:
+                typer.echo(f"Macro not found: {macro_name}")
+                raise typer.Exit(1)
+    except FileNotFoundError as e:
+        typer.echo(str(e))
+        raise typer.Exit(1) from None
+    except MacroParseError as e:
+        typer.echo(f"Error parsing macro: {e}")
+        raise typer.Exit(1) from None
+
+    # Execute macro
+    executor = MacroExecutor(verbose=verbose)
+    try:
+        executor.execute(macro, params=param_dict)
+        typer.echo(f"Macro '{macro.name}' completed successfully")
+    except MacroExecutionError as e:
+        typer.echo(f"Execution failed: {e}")
+        raise typer.Exit(1) from None
+
+
+@macro_app.command("list")
+def macro_list() -> None:
+    """List all available macros."""
+    macros_dir = get_macros_dir()
+
+    if not macros_dir.exists():
+        typer.echo(f"No macros directory found at {macros_dir}")
+        typer.echo("Create it with: mkdir -p ~/.config/automeister/macros")
+        return
+
+    macros = load_macros()
+
+    if not macros:
+        typer.echo("No macros found")
+        return
+
+    for name, macro in sorted(macros.items()):
+        desc = f" - {macro.description}" if macro.description else ""
+        typer.echo(f"  {name}{desc}")
+
+
+@macro_app.command("show")
+def macro_show(
+    macro_name: Annotated[str, typer.Argument(help="Name or path to macro")],
+) -> None:
+    """Show details of a macro."""
+    try:
+        if macro_name.endswith((".yaml", ".yml")) or "/" in macro_name:
+            macro = load_macro(macro_name)
+        else:
+            macro = find_macro(macro_name)
+            if macro is None:
+                typer.echo(f"Macro not found: {macro_name}")
+                raise typer.Exit(1)
+    except (FileNotFoundError, MacroParseError) as e:
+        typer.echo(str(e))
+        raise typer.Exit(1) from None
+
+    typer.echo(f"Name: {macro.name}")
+    if macro.description:
+        typer.echo(f"Description: {macro.description}")
+    if macro.file_path:
+        typer.echo(f"File: {macro.file_path}")
+
+    if macro.parameters:
+        typer.echo("\nParameters:")
+        for param in macro.parameters:
+            req = "required" if param.required else f"default={param.default}"
+            typer.echo(f"  {param.name} ({param.type}, {req})")
+            if param.description:
+                typer.echo(f"    {param.description}")
+
+    if macro.vars:
+        typer.echo("\nVariables:")
+        for name, value in macro.vars.items():
+            typer.echo(f"  {name} = {value}")
+
+    typer.echo(f"\nActions: {len(macro.actions)}")
+    for i, action in enumerate(macro.actions):
+        name = f" [{action.name}]" if action.name else ""
+        cond = f" (if: {action.condition})" if action.condition else ""
+        typer.echo(f"  {i + 1}. {action.action}{name}{cond}")
+
+
+@macro_app.command("create")
+def macro_create(
+    name: Annotated[str, typer.Argument(help="Name for the new macro")],
+) -> None:
+    """Create a new macro from a template."""
+    macros_dir = get_macros_dir()
+    macros_dir.mkdir(parents=True, exist_ok=True)
+
+    file_path = macros_dir / f"{name}.yaml"
+
+    if file_path.exists():
+        typer.echo(f"Macro already exists: {file_path}")
+        raise typer.Exit(1)
+
+    template = f'''name: {name}
+description: ""
+
+# Optional parameters
+# parameters:
+#   - name: param1
+#     type: string
+#     required: true
+#     description: "Description of param1"
+
+# Optional variables
+# vars:
+#   my_var: "value"
+
+actions:
+  - action: delay
+    seconds: 1
+
+  # Add more actions here
+'''
+
+    file_path.write_text(template)
+    typer.echo(f"Created macro: {file_path}")
+    typer.echo("Edit the file to customize your macro")
+
+
+@macro_app.command("edit")
+def macro_edit(
+    macro_name: Annotated[str, typer.Argument(help="Name of macro to edit")],
+) -> None:
+    """Open a macro in the default editor."""
+    macro = find_macro(macro_name)
+    if macro is None or macro.file_path is None:
+        # Try as direct path
+        macros_dir = get_macros_dir()
+        for ext in (".yaml", ".yml"):
+            path = macros_dir / f"{macro_name}{ext}"
+            if path.exists():
+                file_path = str(path)
+                break
+        else:
+            typer.echo(f"Macro not found: {macro_name}")
+            raise typer.Exit(1)
+    else:
+        file_path = macro.file_path
+
+    editor = os.environ.get("EDITOR", "nano")
+    subprocess.run([editor, file_path])
+
+
+@macro_app.command("delete")
+def macro_delete(
+    macro_name: Annotated[str, typer.Argument(help="Name of macro to delete")],
+    force: Annotated[
+        bool,
+        typer.Option("--force", "-f", help="Skip confirmation"),
+    ] = False,
+) -> None:
+    """Delete a macro."""
+    macro = find_macro(macro_name)
+    if macro is None or macro.file_path is None:
+        typer.echo(f"Macro not found: {macro_name}")
+        raise typer.Exit(1)
+
+    if not force:
+        confirm = typer.confirm(f"Delete macro '{macro_name}'?")
+        if not confirm:
+            typer.echo("Cancelled")
+            return
+
+    Path(macro.file_path).unlink()
+    typer.echo(f"Deleted: {macro.file_path}")
 
 
 if __name__ == "__main__":
