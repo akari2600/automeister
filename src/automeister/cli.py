@@ -914,6 +914,34 @@ def window_maximize(
         raise typer.Exit(1) from None
 
 
+@exec_app.command("window.restore")
+def window_restore(
+    title: Annotated[
+        str | None,
+        typer.Option("--title", "-t", help="Window title"),
+    ] = None,
+    wm_class: Annotated[
+        str | None,
+        typer.Option("--class", "-c", help="WM_CLASS"),
+    ] = None,
+    window_id: Annotated[
+        str | None,
+        typer.Option("--id", "-i", help="Window ID (hex)"),
+    ] = None,
+) -> None:
+    """Restore (unmaximize) a window."""
+    if not any([title, wm_class, window_id]):
+        typer.echo("Error: Must specify --title, --class, or --id", err=True)
+        raise typer.Exit(1)
+
+    try:
+        window.unmaximize(title=title, wm_class=wm_class, window_id=window_id)
+        typer.echo("Window restored")
+    except window.WindowError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from None
+
+
 @exec_app.command("window.close")
 def window_close(
     title: Annotated[

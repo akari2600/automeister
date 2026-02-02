@@ -374,6 +374,8 @@ Move a window.
 automeister exec window.move "Firefox" 100 100
 ```
 
+> **Note:** Maximized windows may not respond to move commands. Use `window.restore` to unmaximize first.
+
 #### `window.resize`
 
 Resize a window.
@@ -382,13 +384,16 @@ Resize a window.
 automeister exec window.resize "Firefox" 1280 720
 ```
 
-#### `window.minimize` / `window.maximize` / `window.close`
+> **Note:** Maximized windows may not respond to resize commands. Use `window.restore` to unmaximize first.
+
+#### `window.minimize` / `window.maximize` / `window.restore` / `window.close`
 
 Window state changes.
 
 ```bash
 automeister exec window.minimize "Firefox"
 automeister exec window.maximize "Firefox"
+automeister exec window.restore "Firefox"   # Unmaximize
 automeister exec window.close "Firefox"
 ```
 

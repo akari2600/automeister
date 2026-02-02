@@ -31,9 +31,10 @@ dependencies = [
     "typer[all]>=0.9.0",
     "pyyaml>=6.0",
     "pillow>=10.0.0",
-    "opencv-python-headless>=4.8.0",
-    "numpy>=1.24.0",
+    "opencv-python-headless>=4.8.0,<4.9",
+    "numpy>=1.24.0,<2",
     "jinja2>=3.1.0",
+    "mcp>=1.0.0,<2",
 ]
 
 [project.optional-dependencies]
@@ -46,6 +47,7 @@ dev = [
 
 [project.scripts]
 automeister = "automeister.cli:app"
+automeister-mcp = "automeister.mcp_server:main"
 
 [project.urls]
 Homepage = "https://github.com/automeister/automeister"

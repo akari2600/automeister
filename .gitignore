@@ -62,3 +62,9 @@ Thumbs.db
 
 # Project specific
 ~/.config/automeister/temp/
+
+# MCP
+.mcp.json
+
+# pyenv
+.python-version

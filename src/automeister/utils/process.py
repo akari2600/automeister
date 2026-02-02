@@ -1,6 +1,10 @@
 """Subprocess utilities for running external commands."""
 
+import os
 import subprocess
+
+# X11 commands that need DISPLAY environment variable
+_X11_COMMANDS = {"xdotool", "scrot", "maim", "wmctrl", "xclip", "xwininfo", "xprop"}
 
 
 class CommandError(Exception):
@@ -27,6 +31,7 @@ def run_command(
     check: bool = True,
     capture_output: bool = True,
     input_data: str | None = None,
+    env: dict[str, str] | None = None,
 ) -> str:
     """
     Run a subprocess command and return stdout.
@@ -37,6 +42,7 @@ def run_command(
         check: If True, raise CommandError on non-zero exit
         capture_output: If True, capture stdout and stderr
         input_data: Optional string to pass to stdin
+        env: Optional environment variables to add (merged with current env)
 
     Returns:
         stdout as a string (empty string if not captured)
@@ -46,6 +52,20 @@ def run_command(
         CommandError: If the command fails and check=True
         subprocess.TimeoutExpired: If the command times out
     """
+    # Start with current environment
+    run_env = os.environ.copy()
+
+    # Auto-add DISPLAY for X11 commands if not already set
+    if cmd and cmd[0] in _X11_COMMANDS and "DISPLAY" not in run_env:
+        from automeister.config import get_config
+
+        config = get_config()
+        run_env["DISPLAY"] = config.display.display
+
+    # Merge any custom env
+    if env:
+        run_env.update(env)
+
     try:
         result = subprocess.run(
             cmd,
@@ -53,6 +73,7 @@ def run_command(
             capture_output=capture_output,
             text=True,
             input=input_data,
+            env=run_env,
         )
 
         if check and result.returncode != 0:
