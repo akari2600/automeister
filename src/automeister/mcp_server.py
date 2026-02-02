@@ -175,6 +175,94 @@ def screen_wait_for_text(
     return {"found": True, **result.to_dict()}
 
 
+@mcp.tool()
+def screen_find_text_bounds(
+    text: str,
+    region_x: int | None = None,
+    region_y: int | None = None,
+    region_width: int | None = None,
+    region_height: int | None = None,
+    case_sensitive: bool = False,
+) -> dict[str, Any]:
+    """
+    Find text on screen and return its bounding box coordinates.
+
+    This is the key tool for precise UI element location. It searches for the
+    exact text string (which may span multiple words) and returns the bounding
+    box that encompasses all matched words.
+
+    Use this for hierarchical text location:
+    1. First find a unique row/section text to get its bounds
+    2. Then search within those bounds for the specific element
+
+    Args:
+        text: Text string to search for (can contain spaces for multi-word search)
+        region_x: X coordinate to constrain search region (optional)
+        region_y: Y coordinate to constrain search region (optional)
+        region_width: Width to constrain search region (optional)
+        region_height: Height to constrain search region (optional)
+        case_sensitive: If True, match is case-sensitive
+
+    Returns:
+        Dictionary with x, y, width, height, center_x, center_y if found,
+        or {'found': False} if not found
+
+    Example workflow:
+        1. screen_find_text_bounds(".deb x64 Arm32 Arm64")
+           -> Returns bounds of the entire row
+        2. screen_find_text_bounds("Arm64", region_x=..., region_y=..., ...)
+           -> Returns bounds of just "Arm64" within that row
+        3. mouse_click(x=center_x, y=center_y)
+           -> Click the precise location
+    """
+    region = None
+    if all(v is not None for v in [region_x, region_y, region_width, region_height]):
+        region = (region_x, region_y, region_width, region_height)
+
+    result = ocr.find_text_bounds(
+        text,
+        region=region,
+        case_sensitive=case_sensitive,
+    )
+
+    if result:
+        return {
+            "found": True,
+            **result.to_dict(),
+        }
+    return {"found": False}
+
+
+@mcp.tool()
+def screen_find_all_text_bounds(
+    region_x: int | None = None,
+    region_y: int | None = None,
+    region_width: int | None = None,
+    region_height: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Get all text on screen with their bounding boxes.
+
+    Returns every word detected by OCR along with its position and dimensions.
+    Useful for understanding UI layout and finding all clickable text elements.
+
+    Args:
+        region_x: X coordinate to constrain search region (optional)
+        region_y: Y coordinate to constrain search region (optional)
+        region_width: Width to constrain search region (optional)
+        region_height: Height to constrain search region (optional)
+
+    Returns:
+        List of dictionaries, each with text, x, y, width, height, center_x, center_y
+    """
+    region = None
+    if all(v is not None for v in [region_x, region_y, region_width, region_height]):
+        region = (region_x, region_y, region_width, region_height)
+
+    results = ocr.find_all_text_bounds(region=region)
+    return [r.to_dict() for r in results]
+
+
 # =============================================================================
 # Mouse Tools
 # =============================================================================

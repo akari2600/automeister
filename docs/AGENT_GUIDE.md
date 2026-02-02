@@ -170,6 +170,64 @@ message=$(automeister --json exec screen.ocr --region 100,200,400,100 | jq -r '.
 automeister exec mouse.click-image ok-button.png
 ```
 
+### When to Use Browser DevTools + JavaScript
+
+**Best for:**
+- Small UI elements where OCR struggles (tiny buttons, links)
+- Web pages with complex layouts
+- Elements that need precise text-based selection
+- When you need to find elements by their visible text content
+
+**Limitation:** OCR (Tesseract) struggles with small text, typically below ~12px font size. For web applications, browser DevTools provides a reliable alternative.
+
+**The Pattern:**
+1. Use Automeister to capture the screen and identify what you need to click
+2. Open DevTools with keyboard shortcut
+3. Use JavaScript to find elements by their visible text content
+4. Click the element via JavaScript
+
+**Example: Clicking a Small Download Button**
+
+This example shows finding and clicking an "Arm64" download link when multiple similar links exist on the page:
+
+```bash
+# 1. Capture screen to understand the UI
+automeister exec screen.capture --output /tmp/page.png
+
+# 2. Open browser DevTools
+automeister exec keyboard.key F12
+automeister exec delay 0.5
+
+# 3. Query for elements containing the target text
+automeister exec keyboard.type "Array.from(document.querySelectorAll('a')).filter(a => a.textContent.includes('Arm64'))"
+automeister exec keyboard.key Return
+
+# 4. If multiple matches, narrow down using visible context
+# Find links with "Arm64" that are in a row containing ".deb"
+automeister exec keyboard.type "Array.from(document.querySelectorAll('a')).filter(a => a.textContent.includes('Arm64') && a.closest('tr, div, li, p')?.textContent.includes('.deb'))"
+automeister exec keyboard.key Return
+
+# 5. Click the element
+automeister exec keyboard.type "document.querySelector('a').click()"  # adjust selector based on results
+automeister exec keyboard.key Return
+```
+
+**Key Principle:** Base your JavaScript selectors on **visible text content**, not on attributes you can't see (like href values). Use `.textContent.includes()` to find elements by what's displayed on screen.
+
+**Disambiguation Strategy:**
+
+When multiple elements have the same text (e.g., multiple "Arm64" links):
+1. Find a unique identifier in the same row/section (e.g., ".deb", "User Installer")
+2. Use `.closest()` to find the parent container
+3. Check if the parent's text content includes your unique identifier
+
+```javascript
+// Find "Arm64" link in the ".deb" row
+Array.from(document.querySelectorAll('a'))
+  .filter(a => a.textContent.includes('Arm64')
+            && a.closest('tr, div')?.textContent.includes('.deb'))
+```
+
 ---
 
 ## Reliable Interaction Patterns
@@ -252,14 +310,30 @@ automeister exec screen.wait-for-text "Saved" --timeout 10
 ### Opening Applications
 
 ```bash
-# Method 1: Application menu
+# Method 1: Use app.open (recommended)
+automeister exec app.open "Firefox"
+
+# With window wait
+automeister exec app.open "Firefox" --wait --timeout 10
+
+# List available applications
+automeister exec app.list
+automeister exec app.list --search "browser"
+
+# Open files with default application
+automeister exec app.open-file ~/Documents/report.pdf
+
+# Open URLs in default browser
+automeister exec app.open-url https://www.google.com
+
+# Method 2: Application menu (manual)
 automeister exec keyboard.hotkey "super"
 automeister exec delay 0.5
 automeister exec keyboard.type "firefox"
 automeister exec delay 0.3
 automeister exec keyboard.key Return
 
-# Method 2: Direct command
+# Method 3: Direct command
 automeister exec shell "firefox &"
 
 # Wait for window to appear
@@ -438,6 +512,11 @@ automeister exec window.resize "Browser" 960 1080
    automeister exec screen.wait-for-text "Success"  # matches "Success!" too
    ```
 
+5. **Small text limitation**
+   - Tesseract struggles with text smaller than ~12px
+   - For web apps, use browser DevTools + JavaScript instead (see "When to Use Browser DevTools + JavaScript" section)
+   - For desktop apps, try zooming in with Ctrl++ before OCR
+
 ---
 
 ## MCP Integration Guide
@@ -494,9 +573,10 @@ args: {title: "Firefox"}
 2. **Verify before acting** - find elements before clicking
 3. **Wait for state changes** - use `wait-for` commands
 4. **Implement retries** - handle transient failures
-5. **Combine approaches** - template matching + OCR + vision
+5. **Combine approaches** - template matching + OCR + vision + DevTools
 6. **Handle errors gracefully** - check exit codes and error responses
 7. **Add appropriate delays** - UI needs time to respond
 8. **Use window management** - focus correct window before interaction
 9. **Keep templates updated** - recapture when UI changes
 10. **Log actions** - record what's happening for debugging
+11. **Use DevTools for web apps** - when OCR can't handle small text, use JavaScript to find elements by visible text content

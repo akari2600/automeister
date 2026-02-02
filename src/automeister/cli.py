@@ -9,6 +9,7 @@ from typing import Annotated
 import typer
 
 from automeister import __version__
+from automeister.actions import app as app_actions
 from automeister.actions import image, keyboard, mouse, ocr, screen, util, window
 from automeister.macro import (
     MacroExecutor,
@@ -452,6 +453,116 @@ def screen_wait_for_text(
     except ocr.OCRError as e:
         typer.echo(str(e), err=True)
         raise typer.Exit(1) from None
+
+
+@exec_app.command("screen.find-text-bounds")
+def screen_find_text_bounds(
+    text: Annotated[str, typer.Argument(help="Text to search for")],
+    region: Annotated[
+        str | None,
+        typer.Option("--region", "-r", help="Screen region to search within (x,y,w,h)"),
+    ] = None,
+    lang: Annotated[
+        str,
+        typer.Option("--lang", "-l", help="Tesseract language code"),
+    ] = "eng",
+    case_sensitive: Annotated[
+        bool,
+        typer.Option("--case-sensitive", "-c", help="Case-sensitive matching"),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", "-j", help="Output as JSON"),
+    ] = False,
+) -> None:
+    """Find text on screen and return its bounding box.
+
+    This command searches for the exact text string (which may span multiple
+    words) and returns the bounding box that encompasses all matched words.
+
+    Useful for finding UI elements by their text content and getting
+    coordinates for clicking.
+
+    Example:
+        # Find a row of buttons and get its bounds
+        automeister exec screen.find-text-bounds ".deb x64 Arm32 Arm64" --json
+
+        # Find text within a specific region
+        automeister exec screen.find-text-bounds "Arm64" --region 540,90,150,30 --json
+    """
+    region_tuple = None
+    if region:
+        region_tuple = screen.parse_region(region)
+
+    result = ocr.find_text_bounds(
+        text,
+        region=region_tuple,
+        lang=lang,
+        case_sensitive=case_sensitive,
+    )
+
+    if result:
+        if json_output:
+            typer.echo(json.dumps(result.to_dict()))
+        else:
+            typer.echo(
+                f"Found '{text}' at ({result.x}, {result.y}) "
+                f"size {result.width}x{result.height} "
+                f"center ({result.center[0]}, {result.center[1]})"
+            )
+    else:
+        if json_output:
+            typer.echo(json.dumps({"found": False}))
+        else:
+            typer.echo(f"Text '{text}' not found", err=True)
+        raise typer.Exit(1)
+
+
+@exec_app.command("screen.find-all-text-bounds")
+def screen_find_all_text_bounds(
+    region: Annotated[
+        str | None,
+        typer.Option("--region", "-r", help="Screen region to search within (x,y,w,h)"),
+    ] = None,
+    lang: Annotated[
+        str,
+        typer.Option("--lang", "-l", help="Tesseract language code"),
+    ] = "eng",
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", "-j", help="Output as JSON"),
+    ] = False,
+) -> None:
+    """Get all text on screen with bounding boxes.
+
+    Returns every word detected by OCR along with its position and dimensions.
+    Useful for understanding UI layout and finding clickable elements.
+
+    Example:
+        # Get all text positions on screen
+        automeister exec screen.find-all-text-bounds --json
+
+        # Get text within a specific region
+        automeister exec screen.find-all-text-bounds --region 500,50,200,200 --json
+    """
+    region_tuple = None
+    if region:
+        region_tuple = screen.parse_region(region)
+
+    results = ocr.find_all_text_bounds(
+        region=region_tuple,
+        lang=lang,
+    )
+
+    if json_output:
+        typer.echo(json.dumps([r.to_dict() for r in results]))
+    else:
+        for r in results:
+            typer.echo(
+                f"'{r.text}' at ({r.x}, {r.y}) "
+                f"size {r.width}x{r.height} "
+                f"center ({r.center[0]}, {r.center[1]})"
+            )
 
 
 @exec_app.command("mouse.click-image")
@@ -998,6 +1109,110 @@ def window_wait_for(
         win = window.wait_for(title=title, wm_class=wm_class, timeout=timeout, interval=interval)
         typer.echo(f"Found: {win.window_id}  {win.title}")
     except window.WindowError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from None
+
+
+# =============================================================================
+# Application commands
+# =============================================================================
+
+
+@exec_app.command("app.list")
+def app_list_cmd(
+    search: Annotated[
+        str | None,
+        typer.Option("--search", "-s", help="Search by application name"),
+    ] = None,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", "-j", help="Output as JSON"),
+    ] = False,
+) -> None:
+    """List installed applications."""
+    apps_list = app_actions.list_apps(search=search)
+
+    if json_output:
+        typer.echo(json.dumps([a.to_dict() for a in apps_list]))
+    else:
+        if not apps_list:
+            typer.echo("No applications found")
+            return
+        for a in apps_list:
+            typer.echo(f"  {a.name}")
+            if a.comment:
+                typer.echo(f"    {a.comment}")
+
+
+@exec_app.command("app.open")
+def app_open_cmd(
+    name: Annotated[str, typer.Argument(help="Application name or command")],
+    wait: Annotated[
+        bool,
+        typer.Option("--wait", "-w", help="Wait for application window to appear"),
+    ] = False,
+    timeout: Annotated[
+        float,
+        typer.Option("--timeout", "-t", help="Timeout for waiting (seconds)"),
+    ] = 10.0,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", "-j", help="Output as JSON"),
+    ] = False,
+) -> None:
+    """Open an application by name.
+
+    Examples:
+        automeister exec app.open "Files"
+        automeister exec app.open firefox --wait
+        automeister exec app.open "Visual Studio Code"
+    """
+    try:
+        app_info = app_actions.open_app(name, wait_for_window=wait, window_timeout=timeout)
+        if json_output:
+            typer.echo(json.dumps({"success": True, "app": app_info.to_dict()}))
+        else:
+            typer.echo(f"Opened: {app_info.name}")
+    except app_actions.AppError as e:
+        if json_output:
+            typer.echo(json.dumps({"success": False, "error": str(e)}))
+        else:
+            typer.echo(str(e), err=True)
+        raise typer.Exit(1) from None
+
+
+@exec_app.command("app.open-file")
+def app_open_file_cmd(
+    path: Annotated[str, typer.Argument(help="Path to file to open")],
+) -> None:
+    """Open a file with its default application.
+
+    Examples:
+        automeister exec app.open-file ~/Documents/report.pdf
+        automeister exec app.open-file ./image.png
+    """
+    try:
+        app_actions.open_file(path)
+        typer.echo(f"Opened: {path}")
+    except app_actions.AppError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from None
+
+
+@exec_app.command("app.open-url")
+def app_open_url_cmd(
+    url: Annotated[str, typer.Argument(help="URL to open")],
+) -> None:
+    """Open a URL in the default browser.
+
+    Examples:
+        automeister exec app.open-url https://www.google.com
+        automeister exec app.open-url file:///home/user/index.html
+    """
+    try:
+        app_actions.open_url(url)
+        typer.echo(f"Opened: {url}")
+    except app_actions.AppError as e:
         typer.echo(str(e), err=True)
         raise typer.Exit(1) from None
 
