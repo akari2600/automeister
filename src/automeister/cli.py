@@ -62,6 +62,95 @@ def main(
     pass
 
 
+@app.command("check")
+def check_dependencies(
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", "-j", help="Output results as JSON"),
+    ] = False,
+) -> None:
+    """Check system dependencies and display their status."""
+    from automeister.utils.process import check_command_exists
+
+    dependencies = {
+        "xdotool": {
+            "required": True,
+            "purpose": "Mouse and keyboard control",
+            "install": "sudo apt install xdotool",
+        },
+        "scrot": {
+            "required": False,
+            "purpose": "Screen capture (primary)",
+            "install": "sudo apt install scrot",
+        },
+        "maim": {
+            "required": False,
+            "purpose": "Screen capture (alternative)",
+            "install": "sudo apt install maim",
+        },
+        "wmctrl": {
+            "required": False,
+            "purpose": "Window management",
+            "install": "sudo apt install wmctrl",
+        },
+        "tesseract": {
+            "required": False,
+            "purpose": "OCR text recognition",
+            "install": "sudo apt install tesseract-ocr",
+        },
+        "xclip": {
+            "required": False,
+            "purpose": "Clipboard operations",
+            "install": "sudo apt install xclip",
+        },
+        "notify-send": {
+            "required": False,
+            "purpose": "Desktop notifications",
+            "install": "sudo apt install libnotify-bin",
+        },
+    }
+
+    results = []
+    all_required_ok = True
+
+    for cmd, info in dependencies.items():
+        available = check_command_exists(cmd)
+        results.append({
+            "command": cmd,
+            "available": available,
+            "required": info["required"],
+            "purpose": info["purpose"],
+            "install": info["install"],
+        })
+        if info["required"] and not available:
+            all_required_ok = False
+
+    if json_output:
+        typer.echo(json.dumps({
+            "all_required_available": all_required_ok,
+            "dependencies": results,
+        }))
+    else:
+        typer.echo("Automeister Dependency Check")
+        typer.echo("=" * 40)
+        typer.echo("")
+
+        for dep in results:
+            status = "[OK]" if dep["available"] else "[MISSING]"
+            req = " (required)" if dep["required"] else ""
+            typer.echo(f"{status} {dep['command']}{req}")
+            typer.echo(f"     Purpose: {dep['purpose']}")
+            if not dep["available"]:
+                typer.echo(f"     Install: {dep['install']}")
+            typer.echo("")
+
+        if all_required_ok:
+            typer.echo("All required dependencies are available.")
+        else:
+            typer.echo("Some required dependencies are missing!")
+            raise typer.Exit(1)
+
+
 # =============================================================================
 # Screen commands
 # =============================================================================
