@@ -9,7 +9,7 @@ from typing import Annotated
 import typer
 
 from automeister import __version__
-from automeister.actions import image, keyboard, mouse, screen, util
+from automeister.actions import image, keyboard, mouse, ocr, screen, util, window
 from automeister.macro import (
     MacroExecutor,
     find_macro,
@@ -237,6 +237,132 @@ def screen_exists(
     else:
         typer.echo("false")
         raise typer.Exit(1)
+
+
+@exec_app.command("screen.ocr")
+def screen_ocr(
+    region: Annotated[
+        str | None,
+        typer.Option("--region", "-r", help="Screen region (x,y,w,h)"),
+    ] = None,
+    lang: Annotated[
+        str,
+        typer.Option("--lang", "-l", help="Tesseract language code"),
+    ] = "eng",
+    psm: Annotated[
+        int,
+        typer.Option("--psm", help="Page segmentation mode (0-13)"),
+    ] = 3,
+    image_path: Annotated[
+        str | None,
+        typer.Option("--image", "-i", help="Image file instead of screen capture"),
+    ] = None,
+) -> None:
+    """Perform OCR on the screen or an image."""
+    region_tuple = None
+    if region:
+        region_tuple = screen.parse_region(region)
+
+    try:
+        result = ocr.ocr(
+            image_path=image_path,
+            region=region_tuple,
+            lang=lang,
+            psm=psm,
+        )
+        typer.echo(result.text)
+    except ocr.OCRError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from None
+
+
+@exec_app.command("screen.find-text")
+def screen_find_text(
+    text: Annotated[str, typer.Argument(help="Text to search for")],
+    region: Annotated[
+        str | None,
+        typer.Option("--region", "-r", help="Screen region (x,y,w,h)"),
+    ] = None,
+    lang: Annotated[
+        str,
+        typer.Option("--lang", "-l", help="Tesseract language code"),
+    ] = "eng",
+    exact: Annotated[
+        bool,
+        typer.Option("--exact", "-e", help="Require exact word match"),
+    ] = False,
+    case_sensitive: Annotated[
+        bool,
+        typer.Option("--case-sensitive", "-c", help="Case-sensitive matching"),
+    ] = False,
+) -> None:
+    """Check if text exists on screen using OCR."""
+    region_tuple = None
+    if region:
+        region_tuple = screen.parse_region(region)
+
+    found = ocr.find_text(
+        text,
+        region=region_tuple,
+        lang=lang,
+        exact=exact,
+        case_sensitive=case_sensitive,
+    )
+
+    if found:
+        typer.echo("true")
+    else:
+        typer.echo("false")
+        raise typer.Exit(1)
+
+
+@exec_app.command("screen.wait-for-text")
+def screen_wait_for_text(
+    text: Annotated[str, typer.Argument(help="Text to wait for")],
+    timeout: Annotated[
+        float,
+        typer.Option("--timeout", "-T", help="Timeout in seconds"),
+    ] = 30.0,
+    interval: Annotated[
+        float,
+        typer.Option("--interval", "-i", help="Check interval in seconds"),
+    ] = 1.0,
+    region: Annotated[
+        str | None,
+        typer.Option("--region", "-r", help="Screen region (x,y,w,h)"),
+    ] = None,
+    lang: Annotated[
+        str,
+        typer.Option("--lang", "-l", help="Tesseract language code"),
+    ] = "eng",
+    exact: Annotated[
+        bool,
+        typer.Option("--exact", "-e", help="Require exact word match"),
+    ] = False,
+    case_sensitive: Annotated[
+        bool,
+        typer.Option("--case-sensitive", "-c", help="Case-sensitive matching"),
+    ] = False,
+) -> None:
+    """Wait for text to appear on screen using OCR."""
+    region_tuple = None
+    if region:
+        region_tuple = screen.parse_region(region)
+
+    try:
+        result = ocr.wait_for_text(
+            text,
+            timeout=timeout,
+            interval=interval,
+            region=region_tuple,
+            lang=lang,
+            exact=exact,
+            case_sensitive=case_sensitive,
+        )
+        typer.echo(f"Found: {result.text[:100]}...")
+    except ocr.OCRError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from None
 
 
 @exec_app.command("mouse.click-image")
@@ -526,6 +652,240 @@ def fail_cmd(
 
 
 # =============================================================================
+# Window commands
+# =============================================================================
+
+
+@exec_app.command("window.list")
+def window_list(
+    title: Annotated[
+        str | None,
+        typer.Option("--title", "-t", help="Filter by window title"),
+    ] = None,
+    wm_class: Annotated[
+        str | None,
+        typer.Option("--class", "-c", help="Filter by WM_CLASS"),
+    ] = None,
+    desktop: Annotated[
+        int | None,
+        typer.Option("--desktop", "-d", help="Filter by desktop number"),
+    ] = None,
+) -> None:
+    """List all windows."""
+    try:
+        windows = window.list_windows(title=title, wm_class=wm_class, desktop=desktop)
+        for win in windows:
+            typer.echo(f"{win.window_id}  {win.title[:50]:<50}  {win.wm_class}")
+    except window.WindowError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from None
+
+
+@exec_app.command("window.focus")
+def window_focus(
+    title: Annotated[
+        str | None,
+        typer.Option("--title", "-t", help="Window title"),
+    ] = None,
+    wm_class: Annotated[
+        str | None,
+        typer.Option("--class", "-c", help="WM_CLASS"),
+    ] = None,
+    window_id: Annotated[
+        str | None,
+        typer.Option("--id", "-i", help="Window ID (hex)"),
+    ] = None,
+) -> None:
+    """Focus a window."""
+    if not any([title, wm_class, window_id]):
+        typer.echo("Error: Must specify --title, --class, or --id", err=True)
+        raise typer.Exit(1)
+
+    try:
+        win = window.focus(title=title, wm_class=wm_class, window_id=window_id)
+        typer.echo(f"Focused: {win.title}")
+    except window.WindowError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from None
+
+
+@exec_app.command("window.move")
+def window_move(
+    x: Annotated[int, typer.Argument(help="X coordinate")],
+    y: Annotated[int, typer.Argument(help="Y coordinate")],
+    title: Annotated[
+        str | None,
+        typer.Option("--title", "-t", help="Window title"),
+    ] = None,
+    wm_class: Annotated[
+        str | None,
+        typer.Option("--class", "-c", help="WM_CLASS"),
+    ] = None,
+    window_id: Annotated[
+        str | None,
+        typer.Option("--id", "-i", help="Window ID (hex)"),
+    ] = None,
+) -> None:
+    """Move a window."""
+    if not any([title, wm_class, window_id]):
+        typer.echo("Error: Must specify --title, --class, or --id", err=True)
+        raise typer.Exit(1)
+
+    try:
+        win = window.move(x, y, title=title, wm_class=wm_class, window_id=window_id)
+        typer.echo(f"Moved: {win.title} to ({x}, {y})")
+    except window.WindowError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from None
+
+
+@exec_app.command("window.resize")
+def window_resize(
+    width: Annotated[int, typer.Argument(help="Width")],
+    height: Annotated[int, typer.Argument(help="Height")],
+    title: Annotated[
+        str | None,
+        typer.Option("--title", "-t", help="Window title"),
+    ] = None,
+    wm_class: Annotated[
+        str | None,
+        typer.Option("--class", "-c", help="WM_CLASS"),
+    ] = None,
+    window_id: Annotated[
+        str | None,
+        typer.Option("--id", "-i", help="Window ID (hex)"),
+    ] = None,
+) -> None:
+    """Resize a window."""
+    if not any([title, wm_class, window_id]):
+        typer.echo("Error: Must specify --title, --class, or --id", err=True)
+        raise typer.Exit(1)
+
+    try:
+        win = window.resize(width, height, title=title, wm_class=wm_class, window_id=window_id)
+        typer.echo(f"Resized: {win.title} to {width}x{height}")
+    except window.WindowError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from None
+
+
+@exec_app.command("window.minimize")
+def window_minimize(
+    title: Annotated[
+        str | None,
+        typer.Option("--title", "-t", help="Window title"),
+    ] = None,
+    wm_class: Annotated[
+        str | None,
+        typer.Option("--class", "-c", help="WM_CLASS"),
+    ] = None,
+    window_id: Annotated[
+        str | None,
+        typer.Option("--id", "-i", help="Window ID (hex)"),
+    ] = None,
+) -> None:
+    """Minimize a window."""
+    if not any([title, wm_class, window_id]):
+        typer.echo("Error: Must specify --title, --class, or --id", err=True)
+        raise typer.Exit(1)
+
+    try:
+        window.minimize(title=title, wm_class=wm_class, window_id=window_id)
+        typer.echo("Window minimized")
+    except window.WindowError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from None
+
+
+@exec_app.command("window.maximize")
+def window_maximize(
+    title: Annotated[
+        str | None,
+        typer.Option("--title", "-t", help="Window title"),
+    ] = None,
+    wm_class: Annotated[
+        str | None,
+        typer.Option("--class", "-c", help="WM_CLASS"),
+    ] = None,
+    window_id: Annotated[
+        str | None,
+        typer.Option("--id", "-i", help="Window ID (hex)"),
+    ] = None,
+) -> None:
+    """Maximize a window."""
+    if not any([title, wm_class, window_id]):
+        typer.echo("Error: Must specify --title, --class, or --id", err=True)
+        raise typer.Exit(1)
+
+    try:
+        window.maximize(title=title, wm_class=wm_class, window_id=window_id)
+        typer.echo("Window maximized")
+    except window.WindowError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from None
+
+
+@exec_app.command("window.close")
+def window_close(
+    title: Annotated[
+        str | None,
+        typer.Option("--title", "-t", help="Window title"),
+    ] = None,
+    wm_class: Annotated[
+        str | None,
+        typer.Option("--class", "-c", help="WM_CLASS"),
+    ] = None,
+    window_id: Annotated[
+        str | None,
+        typer.Option("--id", "-i", help="Window ID (hex)"),
+    ] = None,
+) -> None:
+    """Close a window."""
+    if not any([title, wm_class, window_id]):
+        typer.echo("Error: Must specify --title, --class, or --id", err=True)
+        raise typer.Exit(1)
+
+    try:
+        window.close(title=title, wm_class=wm_class, window_id=window_id)
+        typer.echo("Window closed")
+    except window.WindowError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from None
+
+
+@exec_app.command("window.wait-for")
+def window_wait_for(
+    title: Annotated[
+        str | None,
+        typer.Option("--title", "-t", help="Window title to wait for"),
+    ] = None,
+    wm_class: Annotated[
+        str | None,
+        typer.Option("--class", "-c", help="WM_CLASS to wait for"),
+    ] = None,
+    timeout: Annotated[
+        float,
+        typer.Option("--timeout", "-T", help="Timeout in seconds"),
+    ] = 30.0,
+    interval: Annotated[
+        float,
+        typer.Option("--interval", "-i", help="Check interval in seconds"),
+    ] = 0.5,
+) -> None:
+    """Wait for a window to appear."""
+    if not any([title, wm_class]):
+        typer.echo("Error: Must specify --title or --class", err=True)
+        raise typer.Exit(1)
+
+    try:
+        win = window.wait_for(title=title, wm_class=wm_class, timeout=timeout, interval=interval)
+        typer.echo(f"Found: {win.window_id}  {win.title}")
+    except window.WindowError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from None
+
+
+# =============================================================================
 # Macro commands
 # =============================================================================
 
@@ -545,8 +905,16 @@ def run_macro(
         bool,
         typer.Option("--verbose", "-v", help="Show execution details"),
     ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", "-j", help="Output results as JSON"),
+    ] = False,
 ) -> None:
     """Run a macro by name or file path."""
+    import time
+
+    start_time = time.time()
+
     # Parse parameters
     param_dict: dict[str, str] = {}
 
@@ -557,7 +925,13 @@ def run_macro(
     if params:
         for param in params:
             if "=" not in param:
-                typer.echo(f"Invalid parameter format: {param} (expected key=value)")
+                if json_output:
+                    typer.echo(json.dumps({
+                        "success": False,
+                        "error": f"Invalid parameter format: {param} (expected key=value)",
+                    }))
+                else:
+                    typer.echo(f"Invalid parameter format: {param} (expected key=value)")
                 raise typer.Exit(1)
             key, value = param.split("=", 1)
             param_dict[key] = value
@@ -570,36 +944,194 @@ def run_macro(
         else:
             macro = find_macro(macro_name)
             if macro is None:
-                typer.echo(f"Macro not found: {macro_name}")
+                if json_output:
+                    typer.echo(json.dumps({
+                        "success": False,
+                        "error": f"Macro not found: {macro_name}",
+                    }))
+                else:
+                    typer.echo(f"Macro not found: {macro_name}")
                 raise typer.Exit(1)
     except FileNotFoundError as e:
-        typer.echo(str(e))
+        if json_output:
+            typer.echo(json.dumps({"success": False, "error": str(e)}))
+        else:
+            typer.echo(str(e))
         raise typer.Exit(1) from None
     except MacroParseError as e:
-        typer.echo(f"Error parsing macro: {e}")
+        if json_output:
+            typer.echo(json.dumps({"success": False, "error": f"Parse error: {e}"}))
+        else:
+            typer.echo(f"Error parsing macro: {e}")
         raise typer.Exit(1) from None
 
     # Execute macro
     executor = MacroExecutor(verbose=verbose)
     try:
         executor.execute(macro, params=param_dict)
-        typer.echo(f"Macro '{macro.name}' completed successfully")
+        elapsed = time.time() - start_time
+        if json_output:
+            typer.echo(json.dumps({
+                "success": True,
+                "macro": macro.name,
+                "elapsed_seconds": round(elapsed, 3),
+            }))
+        else:
+            typer.echo(f"Macro '{macro.name}' completed successfully")
     except MacroExecutionError as e:
-        typer.echo(f"Execution failed: {e}")
+        elapsed = time.time() - start_time
+        if json_output:
+            typer.echo(json.dumps({
+                "success": False,
+                "macro": macro.name,
+                "error": str(e),
+                "elapsed_seconds": round(elapsed, 3),
+            }))
+        else:
+            typer.echo(f"Execution failed: {e}")
         raise typer.Exit(1) from None
 
 
+@app.command("debug")
+def debug_macro(
+    macro_name: Annotated[str, typer.Argument(help="Name or path to macro")],
+    params: Annotated[
+        list[str] | None,
+        typer.Option("--param", "-p", help="Parameter in key=value format"),
+    ] = None,
+    step: Annotated[
+        bool,
+        typer.Option("--step", "-s", help="Pause before each action"),
+    ] = False,
+) -> None:
+    """Debug a macro with verbose output and optional stepping."""
+    # Parse parameters
+    param_dict: dict[str, str] = {}
+    if params:
+        for param in params:
+            if "=" not in param:
+                typer.echo(f"Invalid parameter format: {param} (expected key=value)")
+                raise typer.Exit(1)
+            key, value = param.split("=", 1)
+            param_dict[key] = value
+
+    # Load macro
+    try:
+        if macro_name.endswith((".yaml", ".yml")) or "/" in macro_name:
+            macro = load_macro(macro_name)
+        else:
+            macro = find_macro(macro_name)
+            if macro is None:
+                typer.echo(f"Macro not found: {macro_name}")
+                raise typer.Exit(1)
+    except (FileNotFoundError, MacroParseError) as e:
+        typer.echo(str(e))
+        raise typer.Exit(1) from None
+
+    typer.echo(f"=== Debugging: {macro.name} ===")
+    typer.echo(f"File: {macro.file_path}")
+    typer.echo(f"Actions: {len(macro.actions)}")
+    typer.echo(f"Parameters: {param_dict}")
+    typer.echo("")
+
+    # Create a custom executor for debugging
+    from automeister.macro.context import MacroContext
+    from automeister.macro.executor import ACTION_HANDLERS, LoopBreak, LoopContinue
+
+    validated_params = macro.validate_params(param_dict)
+    context = MacroContext(params=validated_params, vars=macro.vars)
+
+    for i, action in enumerate(macro.actions):
+        typer.echo(f"[{i + 1}/{len(macro.actions)}] {action.action}")
+        if action.args:
+            for key, value in action.args.items():
+                if key not in ("then", "else", "actions", "catch", "finally"):
+                    typer.echo(f"       {key}: {value}")
+
+        if step:
+            response = typer.prompt("Press Enter to execute (or 'q' to quit)", default="")
+            if response.lower() == "q":
+                typer.echo("Debug session aborted")
+                raise typer.Exit(0)
+
+        # Check condition
+        if action.condition:
+            is_met = context.evaluate_condition(action.condition)
+            typer.echo(f"       Condition '{action.condition}' = {is_met}")
+            if not is_met:
+                typer.echo("       SKIPPED (condition not met)")
+                continue
+
+        # Execute
+        handler = ACTION_HANDLERS.get(action.action)
+        if handler is None:
+            typer.echo(f"       ERROR: Unknown action '{action.action}'")
+            raise typer.Exit(1)
+
+        try:
+            # Render args
+            rendered_args: dict = {}
+            for key, value in action.args.items():
+                if key in ("then", "else", "actions", "catch", "finally"):
+                    rendered_args[key] = value
+                else:
+                    rendered_args[key] = context.render_value(value)
+
+            # Create a dummy executor for the handler
+            dummy_executor = MacroExecutor(verbose=True)
+            result = handler(rendered_args, context, dummy_executor)
+
+            if result is not None:
+                typer.echo(f"       Result: {result}")
+            typer.echo("       OK")
+        except (LoopBreak, LoopContinue) as e:
+            typer.echo(f"       Loop control: {type(e).__name__}")
+        except Exception as e:
+            typer.echo(f"       ERROR: {e}")
+            raise typer.Exit(1) from None
+
+        # Show variable changes
+        if context._runtime_vars:
+            typer.echo(f"       Variables: {context._runtime_vars}")
+
+        typer.echo("")
+
+    typer.echo("=== Debug complete ===")
+
+
 @macro_app.command("list")
-def macro_list() -> None:
+def macro_list(
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", "-j", help="Output results as JSON"),
+    ] = False,
+) -> None:
     """List all available macros."""
     macros_dir = get_macros_dir()
 
     if not macros_dir.exists():
-        typer.echo(f"No macros directory found at {macros_dir}")
-        typer.echo("Create it with: mkdir -p ~/.config/automeister/macros")
+        if json_output:
+            typer.echo(json.dumps({"macros": [], "error": f"No macros directory: {macros_dir}"}))
+        else:
+            typer.echo(f"No macros directory found at {macros_dir}")
+            typer.echo("Create it with: mkdir -p ~/.config/automeister/macros")
         return
 
     macros = load_macros()
+
+    if json_output:
+        macro_list_data = [
+            {
+                "name": name,
+                "description": macro.description,
+                "parameters": len(macro.parameters),
+                "actions": len(macro.actions),
+                "file_path": macro.file_path,
+            }
+            for name, macro in sorted(macros.items())
+        ]
+        typer.echo(json.dumps({"macros": macro_list_data}))
+        return
 
     if not macros:
         typer.echo("No macros found")
@@ -651,6 +1183,94 @@ def macro_show(
         name = f" [{action.name}]" if action.name else ""
         cond = f" (if: {action.condition})" if action.condition else ""
         typer.echo(f"  {i + 1}. {action.action}{name}{cond}")
+
+
+@macro_app.command("validate")
+def macro_validate(
+    macro_name: Annotated[str, typer.Argument(help="Name or path to macro")],
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", "-j", help="Output results as JSON"),
+    ] = False,
+) -> None:
+    """Validate a macro's syntax and structure."""
+    from automeister.macro.executor import ACTION_HANDLERS
+
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    # Try to load the macro
+    try:
+        if macro_name.endswith((".yaml", ".yml")) or "/" in macro_name:
+            macro = load_macro(macro_name)
+        else:
+            macro = find_macro(macro_name)
+            if macro is None:
+                if json_output:
+                    typer.echo(json.dumps({
+                        "valid": False,
+                        "errors": [f"Macro not found: {macro_name}"],
+                        "warnings": [],
+                    }))
+                else:
+                    typer.echo(f"Error: Macro not found: {macro_name}")
+                raise typer.Exit(1)
+    except (FileNotFoundError, MacroParseError) as e:
+        if json_output:
+            typer.echo(json.dumps({
+                "valid": False,
+                "errors": [str(e)],
+                "warnings": [],
+            }))
+        else:
+            typer.echo(f"Error: {e}")
+        raise typer.Exit(1) from None
+
+    # Validate actions
+    for i, action in enumerate(macro.actions):
+        action_name = action.action
+        if action_name not in ACTION_HANDLERS:
+            errors.append(f"Action {i + 1}: Unknown action '{action_name}'")
+
+    # Validate parameters
+    for param in macro.parameters:
+        if param.type not in ("string", "integer", "float", "boolean", "list"):
+            warnings.append(
+                f"Parameter '{param.name}': Unknown type '{param.type}', defaulting to string"
+            )
+
+    # Check for empty actions list
+    if not macro.actions:
+        warnings.append("Macro has no actions defined")
+
+    # Output results
+    is_valid = len(errors) == 0
+
+    if json_output:
+        typer.echo(json.dumps({
+            "valid": is_valid,
+            "macro": macro.name,
+            "file_path": macro.file_path,
+            "actions_count": len(macro.actions),
+            "parameters_count": len(macro.parameters),
+            "errors": errors,
+            "warnings": warnings,
+        }))
+    else:
+        if is_valid:
+            typer.echo(f"Macro '{macro.name}' is valid")
+            typer.echo(f"  Actions: {len(macro.actions)}")
+            typer.echo(f"  Parameters: {len(macro.parameters)}")
+        else:
+            typer.echo(f"Macro '{macro.name}' has errors:")
+            for error in errors:
+                typer.echo(f"  ERROR: {error}")
+
+        for warning in warnings:
+            typer.echo(f"  WARNING: {warning}")
+
+    if not is_valid:
+        raise typer.Exit(1)
 
 
 @macro_app.command("create")

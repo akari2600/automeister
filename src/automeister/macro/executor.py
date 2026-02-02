@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING, Any
 
-from automeister.actions import image, keyboard, mouse, screen, util
+from automeister.actions import image, keyboard, mouse, ocr, screen, util, window
 from automeister.macro.context import MacroContext
 from automeister.macro.parser import Macro, MacroAction
 
@@ -772,3 +772,325 @@ def action_return(
     # Store return value in context for potential retrieval
     context.set("_return_value", value)
     return value
+
+
+# =============================================================================
+# OCR Action Handlers
+# =============================================================================
+
+
+@register_action("screen.ocr")
+def action_screen_ocr(
+    args: dict[str, Any], context: MacroContext, executor: MacroExecutor
+) -> dict:
+    """Perform OCR on screen or region."""
+    region = args.get("region")
+    lang = args.get("lang", "eng")
+    psm = int(args.get("psm", 3))
+    image_path = args.get("image")
+
+    region_tuple = None
+    if region:
+        if isinstance(region, str):
+            region_tuple = screen.parse_region(region)
+        elif isinstance(region, (list, tuple)) and len(region) == 4:
+            region_tuple = tuple(region)  # type: ignore
+
+    result = ocr.ocr(
+        image_path=image_path,
+        region=region_tuple,
+        lang=lang,
+        psm=psm,
+    )
+
+    result_dict = result.to_dict()
+
+    store_as = args.get("store_as")
+    if store_as:
+        context.set(store_as, result_dict)
+
+    return result_dict
+
+
+@register_action("screen.ocr-text")
+def action_screen_ocr_text(
+    args: dict[str, Any], context: MacroContext, executor: MacroExecutor
+) -> str:
+    """Perform OCR and return just the text."""
+    region = args.get("region")
+    lang = args.get("lang", "eng")
+    psm = int(args.get("psm", 3))
+    image_path = args.get("image")
+
+    region_tuple = None
+    if region:
+        if isinstance(region, str):
+            region_tuple = screen.parse_region(region)
+        elif isinstance(region, (list, tuple)) and len(region) == 4:
+            region_tuple = tuple(region)  # type: ignore
+
+    result = ocr.ocr(
+        image_path=image_path,
+        region=region_tuple,
+        lang=lang,
+        psm=psm,
+    )
+
+    store_as = args.get("store_as")
+    if store_as:
+        context.set(store_as, result.text)
+
+    return result.text
+
+
+@register_action("screen.find-text")
+def action_screen_find_text(
+    args: dict[str, Any], context: MacroContext, executor: MacroExecutor
+) -> bool:
+    """Check if text exists on screen."""
+    text = args.get("text", "")
+    region = args.get("region")
+    lang = args.get("lang", "eng")
+    exact = args.get("exact", False)
+    case_sensitive = args.get("case_sensitive", False)
+
+    region_tuple = None
+    if region:
+        if isinstance(region, str):
+            region_tuple = screen.parse_region(region)
+        elif isinstance(region, (list, tuple)) and len(region) == 4:
+            region_tuple = tuple(region)  # type: ignore
+
+    result = ocr.find_text(
+        text,
+        region=region_tuple,
+        lang=lang,
+        exact=exact,
+        case_sensitive=case_sensitive,
+    )
+
+    store_as = args.get("store_as")
+    if store_as:
+        context.set(store_as, result)
+
+    return result
+
+
+@register_action("screen.wait-for-text")
+def action_screen_wait_for_text(
+    args: dict[str, Any], context: MacroContext, executor: MacroExecutor
+) -> dict:
+    """Wait for text to appear on screen."""
+    text = args.get("text", "")
+    timeout = float(args.get("timeout", 30.0))
+    interval = float(args.get("interval", 1.0))
+    region = args.get("region")
+    lang = args.get("lang", "eng")
+    exact = args.get("exact", False)
+    case_sensitive = args.get("case_sensitive", False)
+
+    region_tuple = None
+    if region:
+        if isinstance(region, str):
+            region_tuple = screen.parse_region(region)
+        elif isinstance(region, (list, tuple)) and len(region) == 4:
+            region_tuple = tuple(region)  # type: ignore
+
+    result = ocr.wait_for_text(
+        text,
+        timeout=timeout,
+        interval=interval,
+        region=region_tuple,
+        lang=lang,
+        exact=exact,
+        case_sensitive=case_sensitive,
+    )
+
+    result_dict = result.to_dict()
+
+    store_as = args.get("store_as")
+    if store_as:
+        context.set(store_as, result_dict)
+
+    return result_dict
+
+
+# =============================================================================
+# Window Action Handlers
+# =============================================================================
+
+
+@register_action("window.list")
+def action_window_list(
+    args: dict[str, Any], context: MacroContext, executor: MacroExecutor
+) -> list[dict]:
+    """List windows, optionally filtered."""
+    title = args.get("title")
+    wm_class = args.get("wm_class")
+    desktop = args.get("desktop")
+
+    windows = window.list_windows(
+        title=title,
+        wm_class=wm_class,
+        desktop=int(desktop) if desktop is not None else None,
+    )
+
+    result = [w.to_dict() for w in windows]
+
+    store_as = args.get("store_as")
+    if store_as:
+        context.set(store_as, result)
+
+    return result
+
+
+@register_action("window.focus")
+def action_window_focus(
+    args: dict[str, Any], context: MacroContext, executor: MacroExecutor
+) -> dict:
+    """Focus a window."""
+    title = args.get("title")
+    wm_class = args.get("wm_class")
+    window_id = args.get("window_id")
+
+    result = window.focus(
+        title=title,
+        wm_class=wm_class,
+        window_id=window_id,
+    )
+
+    result_dict = result.to_dict()
+
+    store_as = args.get("store_as")
+    if store_as:
+        context.set(store_as, result_dict)
+
+    return result_dict
+
+
+@register_action("window.move")
+def action_window_move(
+    args: dict[str, Any], context: MacroContext, executor: MacroExecutor
+) -> dict:
+    """Move a window."""
+    x = int(args.get("x", 0))
+    y = int(args.get("y", 0))
+    title = args.get("title")
+    wm_class = args.get("wm_class")
+    window_id = args.get("window_id")
+
+    result = window.move(
+        x, y,
+        title=title,
+        wm_class=wm_class,
+        window_id=window_id,
+    )
+
+    result_dict = result.to_dict()
+
+    store_as = args.get("store_as")
+    if store_as:
+        context.set(store_as, result_dict)
+
+    return result_dict
+
+
+@register_action("window.resize")
+def action_window_resize(
+    args: dict[str, Any], context: MacroContext, executor: MacroExecutor
+) -> dict:
+    """Resize a window."""
+    width = int(args.get("width", 800))
+    height = int(args.get("height", 600))
+    title = args.get("title")
+    wm_class = args.get("wm_class")
+    window_id = args.get("window_id")
+
+    result = window.resize(
+        width, height,
+        title=title,
+        wm_class=wm_class,
+        window_id=window_id,
+    )
+
+    result_dict = result.to_dict()
+
+    store_as = args.get("store_as")
+    if store_as:
+        context.set(store_as, result_dict)
+
+    return result_dict
+
+
+@register_action("window.minimize")
+def action_window_minimize(
+    args: dict[str, Any], context: MacroContext, executor: MacroExecutor
+) -> None:
+    """Minimize a window."""
+    title = args.get("title")
+    wm_class = args.get("wm_class")
+    window_id = args.get("window_id")
+
+    window.minimize(
+        title=title,
+        wm_class=wm_class,
+        window_id=window_id,
+    )
+
+
+@register_action("window.maximize")
+def action_window_maximize(
+    args: dict[str, Any], context: MacroContext, executor: MacroExecutor
+) -> None:
+    """Maximize a window."""
+    title = args.get("title")
+    wm_class = args.get("wm_class")
+    window_id = args.get("window_id")
+
+    window.maximize(
+        title=title,
+        wm_class=wm_class,
+        window_id=window_id,
+    )
+
+
+@register_action("window.close")
+def action_window_close(
+    args: dict[str, Any], context: MacroContext, executor: MacroExecutor
+) -> None:
+    """Close a window."""
+    title = args.get("title")
+    wm_class = args.get("wm_class")
+    window_id = args.get("window_id")
+
+    window.close(
+        title=title,
+        wm_class=wm_class,
+        window_id=window_id,
+    )
+
+
+@register_action("window.wait-for")
+def action_window_wait_for(
+    args: dict[str, Any], context: MacroContext, executor: MacroExecutor
+) -> dict:
+    """Wait for a window to appear."""
+    title = args.get("title")
+    wm_class = args.get("wm_class")
+    timeout = float(args.get("timeout", 30.0))
+    interval = float(args.get("interval", 0.5))
+
+    result = window.wait_for(
+        title=title,
+        wm_class=wm_class,
+        timeout=timeout,
+        interval=interval,
+    )
+
+    result_dict = result.to_dict()
+
+    store_as = args.get("store_as")
+    if store_as:
+        context.set(store_as, result_dict)
+
+    return result_dict
