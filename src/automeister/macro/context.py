@@ -4,7 +4,13 @@ import os
 import subprocess
 from typing import Any
 
-from jinja2 import BaseLoader, Environment, TemplateSyntaxError, UndefinedError
+from jinja2 import (
+    BaseLoader,
+    Environment,
+    StrictUndefined,
+    TemplateSyntaxError,
+    UndefinedError,
+)
 
 
 class MacroContext:
@@ -30,10 +36,11 @@ class MacroContext:
         self._vars = vars or {}
         self._runtime_vars: dict[str, Any] = {}
 
-        # Set up Jinja2 environment
+        # Set up Jinja2 environment with strict undefined to catch missing vars
         self._env = Environment(
             loader=BaseLoader(),
             autoescape=False,
+            undefined=StrictUndefined,
             variable_start_string="{{",
             variable_end_string="}}",
         )

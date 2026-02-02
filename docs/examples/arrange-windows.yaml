@@ -1,0 +1,72 @@
+name: arrange-windows
+description: "Arrange windows in a tiled layout"
+
+parameters:
+  - name: window1
+    type: string
+    required: true
+    description: "Title pattern for first window"
+  - name: window2
+    type: string
+    required: true
+    description: "Title pattern for second window"
+
+vars:
+  screen_width: 1920
+  screen_height: 1080
+  half_width: 960
+
+actions:
+  - action: log
+    message: "Arranging windows: {{ window1 }} and {{ window2 }}"
+
+  # Move first window to left half
+  - action: try
+    actions:
+      - action: window.focus
+        title: "{{ window1 }}"
+
+      - action: window.move
+        title: "{{ window1 }}"
+        x: 0
+        y: 0
+
+      - action: window.resize
+        title: "{{ window1 }}"
+        width: "{{ half_width }}"
+        height: "{{ screen_height }}"
+
+      - action: log
+        message: "Positioned {{ window1 }} on left"
+
+    catch:
+      - action: log
+        message: "Could not find window: {{ window1 }}"
+        level: warn
+
+  # Move second window to right half
+  - action: try
+    actions:
+      - action: window.focus
+        title: "{{ window2 }}"
+
+      - action: window.move
+        title: "{{ window2 }}"
+        x: "{{ half_width }}"
+        y: 0
+
+      - action: window.resize
+        title: "{{ window2 }}"
+        width: "{{ half_width }}"
+        height: "{{ screen_height }}"
+
+      - action: log
+        message: "Positioned {{ window2 }} on right"
+
+    catch:
+      - action: log
+        message: "Could not find window: {{ window2 }}"
+        level: warn
+
+  - action: notify
+    message: "Windows arranged side by side"

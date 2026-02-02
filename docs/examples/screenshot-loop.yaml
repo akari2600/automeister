@@ -1,0 +1,46 @@
+name: screenshot-loop
+description: "Take screenshots at regular intervals"
+
+parameters:
+  - name: count
+    type: integer
+    required: false
+    default: 5
+    description: "Number of screenshots to take"
+  - name: interval
+    type: float
+    required: false
+    default: 2.0
+    description: "Seconds between screenshots"
+  - name: prefix
+    type: string
+    required: false
+    default: "screenshot"
+    description: "Filename prefix"
+
+vars:
+  output_dir: "/tmp/screenshots"
+
+actions:
+  # Create output directory
+  - action: shell
+    command: "mkdir -p {{ output_dir }}"
+
+  # Take screenshots in a loop
+  - action: repeat
+    count: "{{ count }}"
+    as: i
+    actions:
+      - action: screen.capture
+        output: "{{ output_dir }}/{{ prefix }}_{{ i }}.png"
+        store_as: screenshot_path
+
+      - action: log
+        message: "Captured: {{ screenshot_path }}"
+
+      - action: delay
+        seconds: "{{ interval }}"
+
+  - action: notify
+    title: "Screenshot Loop Complete"
+    message: "Captured {{ count }} screenshots to {{ output_dir }}"

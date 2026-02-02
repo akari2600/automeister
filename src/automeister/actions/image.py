@@ -3,6 +3,7 @@
 import time
 from dataclasses import dataclass
 from enum import Enum
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
@@ -10,6 +11,141 @@ import cv2
 import numpy as np
 
 from automeister.actions import mouse, screen
+
+# =============================================================================
+# Caching System for Performance
+# =============================================================================
+
+
+@dataclass
+class CachedScreenshot:
+    """Cached screenshot with timestamp."""
+
+    image: np.ndarray
+    timestamp: float
+    region: tuple[int, int, int, int] | None = None
+
+
+class ScreenshotCache:
+    """
+    Cache for screenshots to avoid repeated captures.
+
+    Useful when performing multiple finds in quick succession.
+    """
+
+    def __init__(self, ttl: float = 0.1) -> None:
+        """
+        Initialize the cache.
+
+        Args:
+            ttl: Time-to-live in seconds. Screenshots older than this are invalid.
+        """
+        self.ttl = ttl
+        self._cache: dict[str, CachedScreenshot] = {}
+
+    def _region_key(self, region: tuple[int, int, int, int] | None) -> str:
+        """Generate a cache key for a region."""
+        if region is None:
+            return "full"
+        return f"{region[0]},{region[1]},{region[2]},{region[3]}"
+
+    def get(self, region: tuple[int, int, int, int] | None = None) -> np.ndarray | None:
+        """
+        Get a cached screenshot if still valid.
+
+        Args:
+            region: Screen region to retrieve.
+
+        Returns:
+            Cached image if valid, None otherwise.
+        """
+        key = self._region_key(region)
+        cached = self._cache.get(key)
+
+        if cached is None:
+            return None
+
+        # Check if still valid
+        if time.time() - cached.timestamp > self.ttl:
+            del self._cache[key]
+            return None
+
+        return cached.image
+
+    def put(
+        self,
+        image: np.ndarray,
+        region: tuple[int, int, int, int] | None = None,
+    ) -> None:
+        """
+        Store a screenshot in the cache.
+
+        Args:
+            image: Screenshot to cache.
+            region: Region the screenshot covers.
+        """
+        key = self._region_key(region)
+        self._cache[key] = CachedScreenshot(
+            image=image,
+            timestamp=time.time(),
+            region=region,
+        )
+
+    def clear(self) -> None:
+        """Clear all cached screenshots."""
+        self._cache.clear()
+
+    def set_ttl(self, ttl: float) -> None:
+        """Update the cache TTL."""
+        self.ttl = ttl
+
+
+# Global screenshot cache (disabled by default with 0 TTL)
+_screenshot_cache = ScreenshotCache(ttl=0.0)
+
+
+def enable_screenshot_cache(ttl: float = 0.1) -> None:
+    """
+    Enable screenshot caching for better performance.
+
+    Args:
+        ttl: Cache time-to-live in seconds (default 0.1s = 100ms)
+    """
+    _screenshot_cache.set_ttl(ttl)
+
+
+def disable_screenshot_cache() -> None:
+    """Disable screenshot caching."""
+    _screenshot_cache.set_ttl(0.0)
+    _screenshot_cache.clear()
+
+
+def clear_screenshot_cache() -> None:
+    """Clear the screenshot cache."""
+    _screenshot_cache.clear()
+
+
+@lru_cache(maxsize=32)
+def _load_template_cached(path: str, mtime: float) -> np.ndarray:
+    """
+    Load a template image with caching based on file modification time.
+
+    Args:
+        path: Path to the template image.
+        mtime: File modification time (for cache invalidation).
+
+    Returns:
+        Loaded image as numpy array.
+    """
+    img = cv2.imread(path)
+    if img is None:
+        raise ValueError(f"Failed to load image: {path}")
+    return img
+
+
+def clear_template_cache() -> None:
+    """Clear the template image cache."""
+    _load_template_cached.cache_clear()
 
 
 class MatchMethod(Enum):
@@ -72,22 +208,36 @@ class ImageNotFoundError(Exception):
 
 
 def _load_image(path: str) -> np.ndarray:
-    """Load an image file as a numpy array."""
+    """Load an image file as a numpy array (with caching)."""
     img_path = Path(path).expanduser().resolve()
     if not img_path.exists():
         raise FileNotFoundError(f"Image file not found: {path}")
 
-    img = cv2.imread(str(img_path))
-    if img is None:
-        raise ValueError(f"Failed to load image: {path}")
-
-    return img
+    # Use cached loading based on file modification time
+    mtime = img_path.stat().st_mtime
+    return _load_template_cached(str(img_path), mtime)
 
 
 def _capture_screen_as_array(
     region: tuple[int, int, int, int] | None = None,
+    use_cache: bool = True,
 ) -> np.ndarray:
-    """Capture the screen and return as a numpy array."""
+    """
+    Capture the screen and return as a numpy array.
+
+    Args:
+        region: Optional region to capture.
+        use_cache: Whether to use the screenshot cache.
+
+    Returns:
+        Screenshot as numpy array.
+    """
+    # Check cache first
+    if use_cache and _screenshot_cache.ttl > 0:
+        cached = _screenshot_cache.get(region)
+        if cached is not None:
+            return cached
+
     # Capture to temp file
     screenshot_path = screen.capture(region=region)
 
@@ -96,6 +246,10 @@ def _capture_screen_as_array(
 
     # Clean up temp file
     Path(screenshot_path).unlink(missing_ok=True)
+
+    # Cache the result
+    if use_cache and _screenshot_cache.ttl > 0:
+        _screenshot_cache.put(img, region)
 
     return img
 

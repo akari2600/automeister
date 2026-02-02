@@ -1,0 +1,54 @@
+name: wait-and-click
+description: "Wait for an element to appear and click it"
+
+parameters:
+  - name: template
+    type: string
+    required: true
+    description: "Path to template image to find"
+  - name: timeout
+    type: float
+    required: false
+    default: 30.0
+    description: "Maximum time to wait in seconds"
+  - name: button
+    type: string
+    required: false
+    default: "left"
+    description: "Mouse button (left, right, middle)"
+
+actions:
+  - action: log
+    message: "Waiting for {{ template }}..."
+
+  - action: try
+    actions:
+      - action: screen.wait-for
+        template: "{{ template }}"
+        timeout: "{{ timeout }}"
+        store_as: match
+
+      - action: log
+        message: "Found at ({{ match.center_x }}, {{ match.center_y }}) with {{ match.confidence }}% confidence"
+
+      - action: mouse.click-at
+        x: "{{ match.center_x }}"
+        y: "{{ match.center_y }}"
+        button: "{{ button }}"
+
+      - action: notify
+        title: "Success"
+        message: "Clicked {{ template }}"
+
+    catch:
+      - action: log
+        message: "Failed: {{ error }}"
+        level: error
+
+      - action: notify
+        title: "Timeout"
+        message: "Could not find {{ template }} within {{ timeout }}s"
+        urgency: critical
+
+      - action: fail
+        message: "Element not found: {{ template }}"
